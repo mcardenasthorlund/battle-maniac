@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <title>Battle Royale 2.5D — PoC</title>
+  </head>
+  <body>
+    <div id="app"></div>
+
+    <div id="touch-controls" class="hidden">
+      <div id="stick-left" class="stick-zone">
+        <div class="stick-base"><div class="stick-knob"></div></div>
+      </div>
+      <div id="stick-right" class="stick-zone">
+        <div class="stick-base"><div class="stick-knob"></div></div>
+      </div>
+    </div>
+
+    <div id="rotate-hint" class="hidden">
+      <div class="rotate-card">
+        <div class="rotate-icon">⟳</div>
+        <div>Gira el dispositivo</div>
+        <div class="muted">Horizontal es mucho mejor para jugar</div>
+      </div>
+    </div>
+
+    <div id="hud" class="hidden">
+      <div class="hud-top-left">
+        <div class="hp-label"><span id="hp-text">100</span> HP</div>
+        <div class="hp-bar"><div id="hp-fill"></div></div>
+        <div id="player-name" class="muted"></div>
+      </div>
+
+      <div class="hud-top-center">
+        <div class="alive"><span id="alive">0</span> vivos</div>
+        <div id="phase" class="muted"></div>
+        <div id="match-timer" class="muted"></div>
+      </div>
+
+      <div class="hud-top-right">
+        <div id="ping" class="muted">ping --</div>
+        <div id="fps" class="muted">fps --</div>
+        <div id="debug" class="muted"></div>
+      </div>
+
+      <div id="feed" class="hud-bottom-left"></div>
+
+      <div class="hud-bottom-right">
+        <div class="minimap-title">MAPA</div>
+        <canvas id="minimap" width="360" height="360"></canvas>
+      </div>
+
+      <div id="death" class="overlay hidden">
+        <div class="death-title">Has sido eliminado</div>
+        <div id="death-sub" class="muted">Observando la partida…</div>
+      </div>
+
+      <div id="damage-flash"></div>
+    </div>
+
+    <div id="status" class="toast hidden"></div>
+
+    <div id="menu" class="overlay">
+      <div class="menu-card">
+        <h1>BATTLE ROYALE <span>2.5D</span></h1>
+        <p class="muted">Prueba de concepto multijugador · hasta 8 jugadores</p>
+        <form id="join-form">
+          <label>
+            Nombre
+            <input id="name-input" maxlength="16" placeholder="Jugador" autocomplete="off" />
+          </label>
+          <label>
+            Sala
+            <input id="room-input" maxlength="16" value="dev" autocomplete="off" />
+          </label>
+          <button type="submit">Entrar</button>
+        </form>
+        <div class="controls muted">
+          <p><b>WASD</b> mover respecto al puntero · <b>Ratón</b> apuntar · <b>Clic izquierdo</b> disparar · <b>Rueda</b> zoom</p>
+          <p><b>Móvil/tablet</b>: stick izquierdo para moverte, stick derecho para apuntar y disparar.</p>
+          <p>Último en pie. La partida se reinicia automáticamente.</p>
+        </div>
+        <div id="menu-error" class="error hidden"></div>
+      </div>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

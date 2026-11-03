@@ -1,0 +1,22 @@
+services:
+  game:
+    image: ghcr.io/mcardenasthorlund/battlemaniac:latest
+    restart: unless-stopped
+    environment:
+      - PORT=8080
+    expose:
+      - "8080"
+    networks:
+      - traefik-proxy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=traefik-proxy"
+      - "traefik.http.routers.battlemaniac-router.rule=Host(`battlemaniac.misappsfantasticas.cloud`)"
+      - "traefik.http.routers.battlemaniac-router.entrypoints=websecure"
+      - "traefik.http.routers.battlemaniac-router.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.battlemaniac-router.service=battlemaniac-serv"
+      - "traefik.http.services.battlemaniac-serv.loadbalancer.server.port=8080"
+
+networks:
+  traefik-proxy:
+    external: true
