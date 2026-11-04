@@ -27,6 +27,7 @@ import {
 import { GameConnection } from './net/gameConnection'
 import { SnapshotBuffer } from './net/snapshotBuffer'
 import { InputManager } from './game/input'
+import { PinchZoom } from './game/pinchZoom'
 import { buildWorldView, setFaded } from './render/worldView'
 import { PlayerView } from './render/playerView'
 import { Effects } from './render/effects'
@@ -65,6 +66,8 @@ const touchControlsEl = el<HTMLDivElement>('touch-controls')
 const leftStickZoneEl = el<HTMLDivElement>('stick-left')
 const rightStickZoneEl = el<HTMLDivElement>('stick-right')
 const rotateHintEl = el<HTMLDivElement>('rotate-hint')
+const viewControlsEl = el<HTMLDivElement>('view-controls')
+const fullscreenBtn = el<HTMLButtonElement>('fullscreen-btn')
 
 // ---------------------------------------------------------------- Three
 
@@ -82,6 +85,8 @@ scene.background = new THREE.Color(0x0b0f14)
 scene.fog = new THREE.Fog(0x0b0f14, 70, 170)
 
 const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 1, 400)
+const MIN_VIEW_HEIGHT = 14
+const MAX_VIEW_HEIGHT = 34
 let viewHeight = 22
 
 function updateFrustum(): void {
@@ -154,6 +159,30 @@ function buildMinimapBase(): void {
     map.width * minimapScale,
     map.depth * minimapScale,
   )
+
+  if (map.lake) {
+    ctx.fillStyle = '#2f7f9e'
+    for (const lobe of map.lake.lobes) {
+      ctx.beginPath()
+      lobe.outline.forEach((point, index) => {
+        const x = MINIMAP_PAD + point.x * minimapScale
+        const y = MINIMAP_PAD + point.z * minimapScale
+        if (index === 0) ctx.moveTo(x, y)
+        else ctx.lineTo(x, y)
+      })
+      ctx.closePath()
+      ctx.fill()
+    }
+
+    const bridge = map.lake.bridge
+    ctx.fillStyle = '#8a6a3f'
+    ctx.fillRect(
+      MINIMAP_PAD + (bridge.x - bridge.w / 2) * minimapScale,
+      MINIMAP_PAD + (bridge.z - bridge.d / 2) * minimapScale,
+      bridge.w * minimapScale,
+      bridge.d * minimapScale,
+    )
+  }
 
   const colors: Record<PropDef['kind'], string> = {
     house: '#8c8577',
@@ -252,6 +281,17 @@ const input = new InputManager(
 )
 input.onModeChange = (isTouch) => applyInputMode(isTouch)
 
+const pinchZoom = new PinchZoom({
+  getViewHeight: () => viewHeight,
+  setViewHeight: (value) => {
+    viewHeight = value
+    updateFrustum()
+  },
+  onActiveChange: (active) => input.setTouchSuspended(active),
+  minViewHeight: MIN_VIEW_HEIGHT,
+  maxViewHeight: MAX_VIEW_HEIGHT,
+})
+
 const roster = new Map<number, PlayerInfo>()
 const playerViews = new Map<number, PlayerView>()
 const fadedOccluders = new Set<THREE.Object3D>()
@@ -266,6 +306,14 @@ let reconnectTimer: number | null = null
 
 let local: LocalState | null = null
 let localView: PlayerView | null = null
+// Posición del jugador interpolada entre ticks fijos para que el render
+// (60/120 Hz) no muestre el salto de la simulación (30 Hz).
+let localPrevX = 0
+let localPrevZ = 0
+let localCurX = 0
+let localCurZ = 0
+let localRenderX = 0
+let localRenderZ = 0
 let pendingInputs: PlayerInput[] = []
 let inputSeq = 0
 let nextLocalShotAt = 0
@@ -276,6 +324,16 @@ let timeLeft = 0
 let renderClock = 0
 let renderClockReady = false
 const correction = new THREE.Vector2()
+
+function resetLocalRenderPose(): void {
+  if (!local) return
+  localPrevX = local.x
+  localPrevZ = local.z
+  localCurX = local.x
+  localCurZ = local.z
+  localRenderX = local.x
+  localRenderZ = local.z
+}
 
 const CAMERA_OFFSET = new THREE.Vector3(34, 48, 34)
 const camFocus = new THREE.Vector3(map.width / 2, 1, map.depth / 2)
@@ -384,6 +442,7 @@ function handleSnapshot(msg: SnapshotMessage): void {
       alive: you.alive,
     }
     correction.set(0, 0)
+    resetLocalRenderPose()
     camFocus.set(you.x, terrainHeight(you.x, you.z) + 1.1, you.z)
   } else {
     reconcile(you, msg.ack)
@@ -426,6 +485,16 @@ function reconcile(you: PlayerSnapshot, ack: number): void {
   } else {
     correction.set(0, 0)
   }
+
+  // Desplaza también los extremos de la interpolación para que el render no
+  // pierda la fase entre ticks al recibir un snapshot. La corrección compensa
+  // el salto visual, así que la posición en pantalla sigue siendo continua.
+  const deltaX = local.x - localCurX
+  const deltaZ = local.z - localCurZ
+  localPrevX += deltaX
+  localPrevZ += deltaZ
+  localCurX = local.x
+  localCurZ = local.z
 }
 
 function handleEvent(event: GameEvent): void {
@@ -477,6 +546,78 @@ function addFeed(text: string): void {
 
 // ---------------------------------------------------------------- Modo de entrada
 
+type FullscreenDocument = Document & {
+  webkitFullscreenElement?: Element | null
+  webkitExitFullscreen?: () => Promise<void> | void
+  msFullscreenElement?: Element | null
+  msExitFullscreen?: () => Promise<void> | void
+}
+
+type FullscreenTarget = HTMLElement & {
+  webkitRequestFullscreen?: () => Promise<void> | void
+  msRequestFullscreen?: () => Promise<void> | void
+}
+
+const fullscreenDocument = document as FullscreenDocument
+const fullscreenTarget = document.documentElement as FullscreenTarget
+
+function currentFullscreenElement(): Element | null {
+  return (
+    fullscreenDocument.fullscreenElement ??
+    fullscreenDocument.webkitFullscreenElement ??
+    fullscreenDocument.msFullscreenElement ??
+    null
+  )
+}
+
+function fullscreenSupported(): boolean {
+  return Boolean(
+    document.fullscreenEnabled ||
+      fullscreenTarget.requestFullscreen ||
+      fullscreenTarget.webkitRequestFullscreen ||
+      fullscreenTarget.msRequestFullscreen,
+  )
+}
+
+function updateFullscreenButton(): void {
+  const active = currentFullscreenElement() !== null
+  document.body.classList.toggle('fullscreen', active)
+  fullscreenBtn.textContent = active ? '🗗' : '⛶'
+  const label = active ? 'Salir de pantalla completa' : 'Pantalla completa'
+  fullscreenBtn.title = label
+  fullscreenBtn.setAttribute('aria-label', label)
+  fullscreenBtn.setAttribute('aria-pressed', String(active))
+}
+
+async function toggleFullscreen(): Promise<void> {
+  try {
+    if (currentFullscreenElement() !== null) {
+      if (document.exitFullscreen) await document.exitFullscreen()
+      else if (fullscreenDocument.webkitExitFullscreen)
+        await fullscreenDocument.webkitExitFullscreen()
+      else if (fullscreenDocument.msExitFullscreen) await fullscreenDocument.msExitFullscreen()
+      return
+    }
+
+    if (fullscreenTarget.requestFullscreen) {
+      await fullscreenTarget.requestFullscreen({ navigationUI: 'hide' })
+    } else if (fullscreenTarget.webkitRequestFullscreen) {
+      await fullscreenTarget.webkitRequestFullscreen()
+    } else if (fullscreenTarget.msRequestFullscreen) {
+      await fullscreenTarget.msRequestFullscreen()
+    } else {
+      showStatus('Pantalla completa no disponible en este navegador')
+    }
+  } catch {
+    showStatus('No se pudo activar la pantalla completa')
+  }
+}
+
+function updateViewControls(): void {
+  const available = input.isTouch && fullscreenSupported()
+  viewControlsEl.classList.toggle('hidden', !available)
+}
+
 function updateTouchUi(): void {
   const active = joined && input.isTouch
   touchControlsEl.classList.toggle('hidden', !active)
@@ -502,6 +643,7 @@ function applyInputMode(isTouch: boolean): void {
   }
 
   updateTouchUi()
+  updateViewControls()
 }
 
 /** Asistencia de puntería suave para táctil: acerca el ángulo a un enemigo en cono. */
@@ -578,7 +720,11 @@ function fixedUpdate(dt: number): void {
   pendingInputs.push(message)
   if (pendingInputs.length > 150) pendingInputs.splice(0, pendingInputs.length - 150)
 
+  localPrevX = localCurX
+  localPrevZ = localCurZ
   if (local.alive) stepMovement(local, message, world, dt)
+  localCurX = local.x
+  localCurZ = local.z
 
   if (
     local.alive &&
@@ -706,8 +852,8 @@ function updateMinimap(dt: number): void {
     if (!player.alive) continue
 
     const isLocal = player.id === myId
-    const x = MINIMAP_PAD + (isLocal && local ? local.x : player.x) * minimapScale
-    const y = MINIMAP_PAD + (isLocal && local ? local.z : player.z) * minimapScale
+    const x = MINIMAP_PAD + (isLocal && local ? localRenderX : player.x) * minimapScale
+    const y = MINIMAP_PAD + (isLocal && local ? localRenderZ : player.z) * minimapScale
     const aim = isLocal && local ? local.aim : player.aim
 
     const radius = isLocal ? 6.5 : 5.5
@@ -762,12 +908,16 @@ let fpsTime = 0
 let fpsFrames = 0
 
 function renderFrame(dt: number): void {
+  const renderAlpha = clamp(accumulator / DT, 0, 1)
+  localRenderX = localPrevX + (localCurX - localPrevX) * renderAlpha
+  localRenderZ = localPrevZ + (localCurZ - localPrevZ) * renderAlpha
+
   let focusX = map.width / 2
   let focusZ = map.depth / 2
 
   if (local) {
-    focusX = local.x
-    focusZ = local.z
+    focusX = localRenderX
+    focusZ = localRenderZ
     if (!local.alive) {
       const spectator = pickSpectator()
       if (spectator) {
@@ -784,8 +934,8 @@ function renderFrame(dt: number): void {
   let aimX = focusX
   let aimZ = focusZ
   if (input.isTouch) {
-    const baseX = local ? local.x : focusX
-    const baseZ = local ? local.z : focusZ
+    const baseX = local ? localRenderX : focusX
+    const baseZ = local ? localRenderZ : focusZ
     const angle = local ? local.aim : 0
     aimX = baseX + Math.cos(angle) * 7
     aimZ = baseZ + Math.sin(angle) * 7
@@ -798,8 +948,8 @@ function renderFrame(dt: number): void {
   if (local && local.alive) {
     const strength = input.isTouch ? 0.18 : 0.25
     const maxOffset = input.isTouch ? 2 : 4
-    focusX += clamp((aimX - local.x) * strength, -maxOffset, maxOffset)
-    focusZ += clamp((aimZ - local.z) * strength, -maxOffset, maxOffset)
+    focusX += clamp((aimX - localRenderX) * strength, -maxOffset, maxOffset)
+    focusZ += clamp((aimZ - localRenderZ) * strength, -maxOffset, maxOffset)
   }
 
   tmpFocus.set(focusX, terrainHeight(focusX, focusZ) + 1.1, focusZ)
@@ -817,7 +967,12 @@ function renderFrame(dt: number): void {
       localView = new PlayerView(roster.get(myId)?.color ?? '#4ea1ff', true)
       scene.add(localView.group)
     }
-    localView.setState(local.x + correction.x, local.z + correction.y, local.aim, local.alive)
+    localView.setState(
+      localRenderX + correction.x,
+      localRenderZ + correction.y,
+      local.aim,
+      local.alive,
+    )
   }
 
   const latest = snapshots.latest
@@ -913,11 +1068,23 @@ window.addEventListener('resize', () => {
 window.addEventListener(
   'wheel',
   (event) => {
-    viewHeight = clamp(viewHeight + Math.sign(event.deltaY) * 2, 14, 34)
+    viewHeight = clamp(
+      viewHeight + Math.sign(event.deltaY) * 2,
+      MIN_VIEW_HEIGHT,
+      MAX_VIEW_HEIGHT,
+    )
     updateFrustum()
   },
   { passive: true },
 )
+
+fullscreenBtn.addEventListener('click', () => {
+  void toggleFullscreen()
+})
+document.addEventListener('fullscreenchange', updateFullscreenButton)
+document.addEventListener('webkitfullscreenchange', updateFullscreenButton)
+document.addEventListener('msfullscreenchange', updateFullscreenButton)
+updateFullscreenButton()
 
 // ---------------------------------------------------------------- API de depuración
 
@@ -930,6 +1097,9 @@ if (import.meta.env.DEV) {
       joined,
       myId,
       local: local ? { ...local } : null,
+      render: local
+        ? { x: localRenderX, z: localRenderZ, correctionX: correction.x, correctionZ: correction.y }
+        : null,
       phase,
       aliveCount,
       tick: latestSnapshot?.tick ?? 0,
@@ -939,6 +1109,9 @@ if (import.meta.env.DEV) {
       ping: conn.latency,
       firing: input.firing,
       touch: input.isTouch,
+      zoom: viewHeight,
+      pinching: pinchZoom.isActive,
+      fullscreen: currentFullscreenElement() !== null,
     }),
     snapshot: () => latestSnapshot,
     step: (frames = 1): number => {

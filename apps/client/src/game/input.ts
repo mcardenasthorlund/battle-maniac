@@ -153,4 +153,9 @@ export class InputManager {
     this.keyboard.firing = false
     this.onModeChange?.(value)
   }
+
+  /** Desactiva temporalmente los sticks (por ejemplo, durante un pellizco de zoom). */
+  setTouchSuspended(value: boolean): void {
+    this.touch.setSuspended(value)
+  }
 }

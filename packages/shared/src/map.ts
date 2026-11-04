@@ -1,5 +1,5 @@
 import { mulberry32, type Vec2 } from './math'
-import { polygonFromRect, type Collider, type World } from './collision'
+import { polygonFromPoints, polygonFromRect, type Collider, type World } from './collision'
 
 export type PropKind = 'house' | 'wall' | 'crate' | 'tree' | 'rock' | 'tower'
 
@@ -14,12 +14,30 @@ export interface PropDef {
   r: number
 }
 
+export interface LakeLobeDef {
+  center: Vec2
+  outline: Vec2[]
+}
+
+export interface BridgeDef {
+  x: number
+  z: number
+  w: number
+  d: number
+}
+
+export interface LakeDef {
+  lobes: LakeLobeDef[]
+  bridge: BridgeDef
+}
+
 export interface MapDef {
   id: string
   width: number
   depth: number
   spawns: Vec2[]
   props: PropDef[]
+  lake?: LakeDef
 }
 
 export function terrainHeight(x: number, z: number): number {
@@ -108,6 +126,56 @@ function buildArenaProps(): PropDef[] {
   return props
 }
 
+/**
+ * Contorno orgánico (no una elipse perfecta) para cada lóbulo del lago.
+ * El lado que mira al puente se recorta para que el agua llegue hasta él.
+ */
+function lakeLobe(
+  cx: number,
+  cz: number,
+  rx: number,
+  rz: number,
+  seed: number,
+  minZ = Number.NEGATIVE_INFINITY,
+  maxZ = Number.POSITIVE_INFINITY,
+): LakeLobeDef {
+  const outline: Vec2[] = []
+  const segments = 48
+
+  for (let i = 0; i < segments; i++) {
+    const t = (i / segments) * Math.PI * 2
+    const wobble =
+      1 +
+      Math.sin(t * 3 + seed) * 0.055 +
+      Math.sin(t * 5 + seed * 2.1) * 0.035 +
+      Math.sin(t * 2 + seed * 0.7) * 0.045
+
+    const z = cz + Math.sin(t) * rz * wobble
+    outline.push({
+      x: cx + Math.cos(t) * rx * wobble,
+      z: Math.min(maxZ, Math.max(minZ, z)),
+    })
+  }
+
+  return { center: { x: cx, z: cz }, outline }
+}
+
+/**
+ * Lago de la izquierda del mapa. Se divide en dos lóbulos de agua que dejan
+ * libre el pasillo central, donde se coloca el puente.
+ */
+function buildLake(): LakeDef {
+  const bridge = { x: 56, z: 130, w: 50, d: 7.2 }
+
+  return {
+    lobes: [
+      lakeLobe(54, 114.5, 20, 13, 1.3, Number.NEGATIVE_INFINITY, bridge.z - bridge.d / 2 - 0.2),
+      lakeLobe(58, 145.5, 20, 12.5, 4.1, bridge.z + bridge.d / 2 + 0.2, Number.POSITIVE_INFINITY),
+    ],
+    bridge,
+  }
+}
+
 export const ARENA_01: MapDef = {
   id: 'arena_01',
   width: 260,
@@ -127,6 +195,7 @@ export const ARENA_01: MapDef = {
     { x: 130, z: 195 },
   ],
   props: buildArenaProps(),
+  lake: buildLake(),
 }
 
 const MAPS: Record<string, MapDef> = {
@@ -148,6 +217,14 @@ export function buildWorld(map: MapDef): World {
       colliders.push(polygonFromRect(prop.x, prop.z, prop.w, prop.d, prop.rot, prop.h))
     }
   }
+
+  // El agua bloquea el paso (altura 0 para que las balas sí puedan sobrevolarla).
+  if (map.lake) {
+    for (const lobe of map.lake.lobes) {
+      colliders.push(polygonFromPoints(lobe.outline, 0))
+    }
+  }
+
   return {
     colliders,
     bounds: { minX: 2, maxX: map.width - 2, minZ: 2, maxZ: map.depth - 2 },

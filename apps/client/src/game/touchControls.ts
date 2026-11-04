@@ -20,6 +20,7 @@ class Stick {
     private readonly zone: HTMLElement,
     private readonly base: HTMLElement,
     private readonly knob: HTMLElement,
+    private readonly isBlocked: () => boolean = () => false,
   ) {
     zone.addEventListener('pointerdown', (event) => this.onDown(event))
     zone.addEventListener('pointermove', (event) => this.onMove(event))
@@ -41,7 +42,7 @@ class Stick {
   }
 
   private onDown(event: PointerEvent): void {
-    if (this.pointerId !== null) return
+    if (this.pointerId !== null || this.isBlocked()) return
     event.preventDefault()
 
     this.pointerId = event.pointerId
@@ -99,6 +100,7 @@ class Stick {
 export class TouchSource {
   private readonly left: Stick
   private readonly right: Stick
+  private suspended = false
 
   private readonly basisRight = new THREE.Vector3(1, 0, 0)
   private readonly basisUp = new THREE.Vector3(0, 0, 1)
@@ -107,15 +109,19 @@ export class TouchSource {
     private readonly camera: THREE.Camera,
     elements: TouchElements,
   ) {
+    const blocked = (): boolean => this.suspended
+
     this.left = new Stick(
       elements.leftZone,
       elements.leftZone.querySelector('.stick-base') as HTMLElement,
       elements.leftZone.querySelector('.stick-knob') as HTMLElement,
+      blocked,
     )
     this.right = new Stick(
       elements.rightZone,
       elements.rightZone.querySelector('.stick-base') as HTMLElement,
       elements.rightZone.querySelector('.stick-knob') as HTMLElement,
+      blocked,
     )
 
     this.updateBasis()
@@ -124,7 +130,14 @@ export class TouchSource {
   }
 
   get firing(): boolean {
-    return this.right.magnitude > FIRE_THRESHOLD
+    return !this.suspended && this.right.magnitude > FIRE_THRESHOLD
+  }
+
+  /** Bloquea los sticks mientras dura un gesto de zoom con dos dedos. */
+  setSuspended(value: boolean): void {
+    if (this.suspended === value) return
+    this.suspended = value
+    if (value) this.reset()
   }
 
   reset(): void {
@@ -133,6 +146,10 @@ export class TouchSource {
   }
 
   getIntent(ctx: AimContext): InputIntent {
+    if (this.suspended) {
+      return { moveX: 0, moveZ: 0, aim: ctx.aim, fire: false }
+    }
+
     // La cámara se recoloca cada frame; la base debe recalcularse con ella.
     this.updateBasis()
 

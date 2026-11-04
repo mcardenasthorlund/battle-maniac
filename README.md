@@ -69,6 +69,8 @@ npm start        # http://localhost:8080
 | Zoom | Rueda |
 | Mover (móvil) | Stick izquierdo (aparece donde tocas) |
 | Apuntar y disparar (móvil) | Stick derecho; dispara al desviarlo |
+| Zoom (móvil) | Pellizco con dos dedos |
+| Pantalla completa (móvil) | Botón ⛶ (si el navegador lo soporta) |
 
 Al morir pasas a espectador y la partida se reinicia automáticamente **8 segundos** después. La partida tiene un límite de **5 minutos**.
 
@@ -80,6 +82,8 @@ El cliente detecta punteros táctiles y muestra dos sticks virtuales dinámicos:
 
 - **Izquierdo:** mueve en la dirección del dedo respecto a la pantalla.
 - **Derecho:** apunta y dispara automáticamente al desviarlo, con asistencia de puntería suave y comprobación de línea de visión.
+- **Pellizco:** junta o separa dos dedos **sobre la misma mitad de la pantalla** para alejar o acercar la cámara, igual que la rueda en escritorio. Mientras dura el gesto los sticks se pausan para no moverse por accidente. Si los dedos están en mitades opuestas se interpreta como mover + apuntar/disparar, no como zoom.
+- **Botón ⛶:** alterna pantalla completa cuando el navegador expone la API (Android/tablet; en iPhone Safari no está disponible).
 
 En táctil la cámara se abre más, el HUD se reorganiza y se reduce la resolución interna y la sombra para mantener el rendimiento. En vertical aparece un aviso para girar el dispositivo.
 

@@ -33,6 +33,18 @@ export interface World {
   heightAt(x: number, z: number): number
 }
 
+export function polygonFromPoints(points: Vec2[], height: number): PolygonCollider {
+  return {
+    type: 'poly',
+    points,
+    height,
+    minX: Math.min(...points.map((p) => p.x)),
+    maxX: Math.max(...points.map((p) => p.x)),
+    minZ: Math.min(...points.map((p) => p.z)),
+    maxZ: Math.max(...points.map((p) => p.z)),
+  }
+}
+
 export function polygonFromRect(
   x: number,
   z: number,
@@ -55,15 +67,7 @@ export function polygonFromRect(
     x: x + p.x * c - p.z * s,
     z: z + p.x * s + p.z * c,
   }))
-  return {
-    type: 'poly',
-    points,
-    height,
-    minX: Math.min(...points.map((p) => p.x)),
-    maxX: Math.max(...points.map((p) => p.x)),
-    minZ: Math.min(...points.map((p) => p.z)),
-    maxZ: Math.max(...points.map((p) => p.z)),
-  }
+  return polygonFromPoints(points, height)
 }
 
 export function pointInPolygon(points: Vec2[], x: number, z: number): boolean {

@@ -306,6 +306,35 @@ body {
   touch-action: none;
 }
 
+#view-controls {
+  position: fixed;
+  top: max(10px, env(safe-area-inset-top));
+  right: max(10px, env(safe-area-inset-right));
+  z-index: 15;
+}
+
+.view-btn {
+  width: 46px;
+  height: 46px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  background: var(--panel);
+  border: 1px solid rgba(120, 170, 255, 0.3);
+  border-radius: 50%;
+  color: var(--text);
+  font-size: 21px;
+  line-height: 1;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.view-btn:active {
+  transform: scale(0.94);
+  filter: brightness(1.15);
+}
+
 #touch-controls {
   position: fixed;
   inset: 0;
@@ -415,7 +444,7 @@ body.touch-mode .hud-top-left {
 
 body.touch-mode .hud-top-right {
   top: max(12px, env(safe-area-inset-top));
-  right: 12px;
+  right: 66px;
 }
 
 body.touch-mode .hud-top-center {

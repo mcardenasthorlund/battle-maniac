@@ -3,6 +3,9 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <title>Battle Royale 2.5D — PoC</title>
   </head>
   <body>
@@ -59,6 +62,19 @@
       <div id="damage-flash"></div>
     </div>
 
+    <div id="view-controls" class="hidden">
+      <button
+        id="fullscreen-btn"
+        type="button"
+        class="view-btn"
+        aria-label="Pantalla completa"
+        aria-pressed="false"
+        title="Pantalla completa"
+      >
+        ⛶
+      </button>
+    </div>
+
     <div id="status" class="toast hidden"></div>
 
     <div id="menu" class="overlay">
@@ -78,7 +94,7 @@
         </form>
         <div class="controls muted">
           <p><b>WASD</b> mover respecto al puntero · <b>Ratón</b> apuntar · <b>Clic izquierdo</b> disparar · <b>Rueda</b> zoom</p>
-          <p><b>Móvil/tablet</b>: stick izquierdo para moverte, stick derecho para apuntar y disparar.</p>
+          <p><b>Móvil/tablet</b>: stick izquierdo para moverte, stick derecho para apuntar y disparar. Pellizca con dos dedos sobre la misma mitad de la pantalla para acercar o alejar. El botón ⛶ activa la pantalla completa.</p>
           <p>Último en pie. La partida se reinicia automáticamente.</p>
         </div>
         <div id="menu-error" class="error hidden"></div>

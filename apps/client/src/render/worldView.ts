@@ -1,5 +1,13 @@
 import * as THREE from 'three'
-import { mulberry32, terrainHeight, type MapDef, type PropDef } from '@br/shared'
+import {
+  mulberry32,
+  terrainHeight,
+  type BridgeDef,
+  type LakeDef,
+  type MapDef,
+  type PropDef,
+  type Vec2,
+} from '@br/shared'
 
 export interface WorldView {
   group: THREE.Group
@@ -158,6 +166,172 @@ function addProp(scene: THREE.Group, prop: PropDef): THREE.Object3D {
   return propGroup
 }
 
+/**
+ * Malla radial que sigue el contorno orgánico del lago y se adapta a la
+ * altura del terreno. `scale` permite dibujar una orilla algo mayor.
+ */
+function buildLakeLobeGeometry(
+  center: Vec2,
+  outline: Vec2[],
+  scale: number,
+  lift: number,
+  rings = 4,
+): THREE.BufferGeometry {
+  const count = outline.length
+  const positions: number[] = []
+  const indices: number[] = []
+
+  positions.push(center.x, terrainHeight(center.x, center.z) + lift, center.z)
+
+  for (let ring = 1; ring <= rings; ring++) {
+    const factor = (ring / rings) * scale
+    for (const point of outline) {
+      const x = center.x + (point.x - center.x) * factor
+      const z = center.z + (point.z - center.z) * factor
+      positions.push(x, terrainHeight(x, z) + lift, z)
+    }
+  }
+
+  for (let i = 0; i < count; i++) {
+    indices.push(0, 1 + i, 1 + ((i + 1) % count))
+  }
+
+  for (let ring = 1; ring < rings; ring++) {
+    const inner = 1 + (ring - 1) * count
+    const outer = 1 + ring * count
+    for (let i = 0; i < count; i++) {
+      const next = (i + 1) % count
+      indices.push(inner + i, outer + i, outer + next)
+      indices.push(inner + i, outer + next, inner + next)
+    }
+  }
+
+  const geometry = new THREE.BufferGeometry()
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
+  geometry.setIndex(indices)
+  geometry.computeVertexNormals()
+  return geometry
+}
+
+function addLake(parent: THREE.Group, lake: LakeDef): void {
+  const shoreMaterial = new THREE.MeshStandardMaterial({
+    color: 0x6f6547,
+    roughness: 1,
+    metalness: 0,
+    side: THREE.DoubleSide,
+  })
+  const waterMaterial = new THREE.MeshStandardMaterial({
+    color: 0x2f7f9e,
+    roughness: 0.25,
+    metalness: 0.12,
+    emissive: 0x071a22,
+    side: THREE.DoubleSide,
+  })
+
+  for (const lobe of lake.lobes) {
+    const shore = new THREE.Mesh(
+      buildLakeLobeGeometry(lobe.center, lobe.outline, 1.06, 0.035),
+      shoreMaterial,
+    )
+    shore.name = 'lake-shore'
+    shore.receiveShadow = true
+    parent.add(shore)
+
+    const water = new THREE.Mesh(
+      buildLakeLobeGeometry(lobe.center, lobe.outline, 1, 0.07),
+      waterMaterial,
+    )
+    water.name = 'lake-water'
+    water.receiveShadow = true
+    parent.add(water)
+  }
+
+  addBridge(parent, lake.bridge)
+}
+
+function addBridge(parent: THREE.Group, bridge: BridgeDef): void {
+  const plankCount = 32
+  const plankWidth = bridge.w / plankCount
+  const plankHeight = 0.14
+  const deckLift = 0.11
+  const plankMaterials = [
+    makeMaterial(0x6d4f2c, 0.85),
+    makeMaterial(0x7a5a33, 0.85),
+  ]
+  const curbMaterial = makeMaterial(0x4b3721, 0.9)
+
+  for (let i = 0; i < plankCount; i++) {
+    const x = bridge.x - bridge.w / 2 + plankWidth * (i + 0.5)
+    const groundY = Math.max(
+      terrainHeight(x, bridge.z - bridge.d / 2),
+      terrainHeight(x, bridge.z),
+      terrainHeight(x, bridge.z + bridge.d / 2),
+    )
+
+    const plank = new THREE.Mesh(boxGeometry, plankMaterials[i % plankMaterials.length])
+    plank.scale.set(plankWidth - 0.06, plankHeight, bridge.d)
+    plank.position.set(x, groundY + deckLift + plankHeight / 2, bridge.z)
+    plank.castShadow = true
+    plank.receiveShadow = true
+    parent.add(plank)
+
+    for (const side of [-1, 1]) {
+      const curb = new THREE.Mesh(boxGeometry, curbMaterial)
+      curb.scale.set(plankWidth - 0.06, 0.2, 0.16)
+      curb.position.set(
+        x,
+        groundY + deckLift + plankHeight + 0.08,
+        bridge.z + side * (bridge.d / 2 - 0.08),
+      )
+      curb.castShadow = true
+      parent.add(curb)
+    }
+  }
+}
+
+/**
+ * Pegatina del logo en el suelo, en el centro del mapa. La geometría se
+ * segmenta y adapta a la altura del terreno para que quede totalmente pegada.
+ */
+function addFloorSticker(parent: THREE.Group, map: MapDef): void {
+  const size = 16
+  const geometry = new THREE.PlaneGeometry(size, size, 24, 24)
+  geometry.rotateX(-Math.PI / 2)
+  // Gira la imagen para que se lea de frente desde la cámara isométrica.
+  geometry.rotateY(Math.PI / 4)
+  // Ligeramente al norte del centro para que la torre central no lo tape.
+  geometry.translate(map.width / 2, 0, map.depth / 2 - 15)
+
+  const positions = geometry.attributes.position as THREE.BufferAttribute
+  for (let i = 0; i < positions.count; i++) {
+    positions.setY(i, terrainHeight(positions.getX(i), positions.getZ(i)) + 0.04)
+  }
+  positions.needsUpdate = true
+  geometry.computeVertexNormals()
+
+  const texture = new THREE.TextureLoader().load('/Logo-Maniac.png')
+  texture.colorSpace = THREE.SRGBColorSpace
+  texture.anisotropy = 8
+
+  const sticker = new THREE.Mesh(
+    geometry,
+    new THREE.MeshStandardMaterial({
+      map: texture,
+      transparent: true,
+      depthWrite: false,
+      roughness: 0.95,
+      metalness: 0,
+      polygonOffset: true,
+      polygonOffsetFactor: -1,
+      polygonOffsetUnits: -1,
+    }),
+  )
+  sticker.name = 'floor-logo-sticker'
+  // Se dibuja antes que los demás elementos transparentes (disparos, impactos).
+  sticker.renderOrder = -1
+  parent.add(sticker)
+}
+
 export function buildWorldView(map: MapDef, scene: THREE.Scene): WorldView {
   const group = new THREE.Group()
   group.name = 'world'
@@ -195,6 +369,9 @@ export function buildWorldView(map: MapDef, scene: THREE.Scene): WorldView {
   terrain.receiveShadow = true
   terrain.name = 'terrain'
   group.add(terrain)
+
+  addFloorSticker(group, map)
+  if (map.lake) addLake(group, map.lake)
 
   const occluders: THREE.Object3D[] = []
 
